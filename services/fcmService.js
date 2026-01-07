@@ -13,21 +13,25 @@ const sendNotification = async (tokens, payload) => {
   console.log('\n[FCM-Service] ==========================================');
   console.log('[FCM-Service] 🚀 SENDING NOTIFICATION');
   console.log('[FCM-Service] Number of tokens:', tokens.length);
+  // Log the first token for debugging
   console.log('[FCM-Service] First token:', tokens[0].substring(0, 20) + '...');
-  console.log('[FCM-Service] Payload:', JSON.stringify(payload, null, 2));
   console.log('[FCM-Service] ==========================================\n');
 
   try {
-    const response = await admin.messaging().sendEachForMulticast({
+    // We construct the final message here.
+    // Notice: We add 'android' and 'apns' blocks automatically.
+    const messagePayload = {
       tokens: tokens,
-      notification: payload.notification,
+      notification: payload.notification, // Only 'title' and 'body' allowed here
       data: payload.data,
       android: {
         priority: "high",
         notification: {
           sound: "default",
-          channelId: "chat_messages",
-          priority: "high"
+          channelId: "chat_messages", // Android Channel ID goes here
+          priority: "high",
+          defaultSound: true,
+          visibility: "public"
         }
       },
       apns: {
@@ -39,9 +43,11 @@ const sendNotification = async (tokens, payload) => {
           }
         }
       }
-    });
+    };
 
-    console.log('[FCM-Service] ✅ FCM Response:', JSON.stringify(response, null, 2));
+    const response = await admin.messaging().sendEachForMulticast(messagePayload);
+
+    console.log('[FCM-Service] ✅ FCM Response Success Count:', response.successCount);
 
     const tokensToRemove = [];
     response.responses.forEach((result, index) => {
@@ -59,32 +65,26 @@ const sendNotification = async (tokens, payload) => {
         ) {
           tokensToRemove.push(tokens[index]);
         }
-      } else {
-        console.log(`[FCM-Service] ✅ Successfully sent to token ${tokens[index].substring(0, 20)}...`);
       }
     });
 
     if (tokensToRemove.length > 0) {
-      console.log('[FCM-Service] 🗑️ Removing invalid tokens:', tokensToRemove.map(t => t.substring(0, 20) + '...'));
+      console.log('[FCM-Service] 🗑️ Removing invalid tokens:', tokensToRemove.length);
       await FCMToken.deleteMany({ token: { $in: tokensToRemove } });
     }
   } catch (error) {
-    console.error('[FCM-Service] ❌ Error in sendNotification:', error.message, error.stack);
+    console.error('[FCM-Service] ❌ Error in sendNotification:', error.message);
   }
 };
 
 const sendToUser = async (userId, payload) => {
   try {
-    console.log(`[FCM-Service] 🔍 Fetching tokens for user: ${userId}`);
-    
     const userTokens = await FCMToken.find({ userId }).select("token -_id");
     
     if (userTokens.length === 0) {
       console.log(`[FCM-Service] ❌ No FCM tokens found for user ${userId}`);
       return;
     }
-    
-    console.log(`[FCM-Service] ✅ Found ${userTokens.length} token(s) for user ${userId}`);
     
     const tokens = userTokens.map((t) => t.token);
     await sendNotification(tokens, payload);
@@ -94,20 +94,16 @@ const sendToUser = async (userId, payload) => {
   }
 };
 
+// ✅ FIXED: Removed invalid fields (sound, priority, channel_id) from 'notification'
 const sendNewMessageNotification = async (recipientId, sender, message, conversationId) => {
-  console.log(`\n[FCM-Service] 💬 Sending new message notification`);
-  console.log(`[FCM-Service] Recipient ID: ${recipientId}`);
-  console.log(`[FCM-Service] Sender: ${sender.name} (${sender._id})`);
-  console.log(`[FCM-Service] Message: ${message.text || '[Attachment]'}`);
-  console.log(`[FCM-Service] Conversation ID: ${conversationId}`);
+  console.log(`[FCM-Service] 💬 Preparing notification for ${recipientId}`);
   
   const payload = {
     notification: {
-      title: `${sender.name || 'Someone'}`,
-      body: message.text || (message.attachment ? `Sent an attachment` : 'Sent a message'),
-      sound: "default",
-      priority: "high",
-      android_channel_id: "chat_messages"
+      title: sender.name || 'New Message',
+      body: message.text || (message.attachment ? 'Sent an attachment' : 'Sent a message'),
+      // DO NOT put sound, priority, or channel_id here. 
+      // They are handled in sendNotification's android block.
     },
     data: {
       type: 'chat_message',
@@ -117,23 +113,19 @@ const sendNewMessageNotification = async (recipientId, sender, message, conversa
       conversationId: conversationId.toString(),
       messageId: message._id.toString(),
       text: message.text || '',
-      timestamp: message.createdAt ? message.createdAt.toISOString() : new Date().toISOString()
+      timestamp: new Date().toISOString()
     },
   };
   
   await sendToUser(recipientId, payload);
 };
 
+// ✅ FIXED: Removed invalid fields
 const sendFriendRequestNotification = async (recipientId, sender) => {
-  console.log(`\n[FCM-Service] 👥 Sending friend request notification`);
-  console.log(`[FCM-Service] To: ${recipientId}`);
-  console.log(`[FCM-Service] From: ${sender.name} (${sender._id})`);
-  
   const payload = {
     notification: {
       title: 'New Friend Request',
       body: `${sender.name || 'Someone'} wants to be your friend`,
-      sound: "default"
     },
     data: {
       type: 'FRIEND_REQUEST',
@@ -144,16 +136,12 @@ const sendFriendRequestNotification = async (recipientId, sender) => {
   await sendToUser(recipientId, payload);
 };
 
+// ✅ FIXED: Removed invalid fields
 const sendFriendRequestAcceptedNotification = async (originalSenderId, acceptor) => {
-  console.log(`\n[FCM-Service] ✅ Sending friend request accepted notification`);
-  console.log(`[FCM-Service] To: ${originalSenderId}`);
-  console.log(`[FCM-Service] Acceptor: ${acceptor.name} (${acceptor._id})`);
-  
   const payload = {
     notification: {
       title: 'Friend Request Accepted',
       body: `${acceptor.name || 'Someone'} accepted your friend request`,
-      sound: "default"
     },
     data: {
       type: 'FRIEND_REQUEST_ACCEPTED',
@@ -167,7 +155,7 @@ const sendFriendRequestAcceptedNotification = async (originalSenderId, acceptor)
 module.exports = {
   sendNotification,
   sendToUser,
-  sendToUsers: sendToUser, // For compatibility
+  sendToUsers: sendToUser, 
   sendNewMessageNotification,
   sendFriendRequestNotification,
   sendFriendRequestAcceptedNotification,
