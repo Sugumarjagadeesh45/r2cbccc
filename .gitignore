@@ -3,3 +3,6 @@ node_modules/
 .vscode/
 
 sugumarjagadeesh45reals2chat-firebase-adminsdk-fbsvc-c162d5671c.json
+
+# Firebase / Google secrets
+config/serviceAccountKey.json
