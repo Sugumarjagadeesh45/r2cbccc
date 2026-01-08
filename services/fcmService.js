@@ -13,37 +13,77 @@ const sendNotification = async (tokens, payload) => {
   console.log('\n[FCM-Service] ==========================================');
   console.log('[FCM-Service] 🚀 SENDING NOTIFICATION');
   console.log('[FCM-Service] Number of tokens:', tokens.length);
-  // Log the first token for debugging
-  console.log('[FCM-Service] First token:', tokens[0].substring(0, 20) + '...');
+  // Log the full token for debugging
+  console.log('[FCM-Service] Target Token:', tokens[0]);
   console.log('[FCM-Service] ==========================================\n');
 
   try {
-    // We construct the final message here.
-    // Notice: We add 'android' and 'apns' blocks automatically.
-    const messagePayload = {
-      tokens: tokens,
-      notification: payload.notification, // Only 'title' and 'body' allowed here
-      data: payload.data,
-      android: {
+
+
+      const messagePayload = {
+    tokens: tokens,
+    notification: payload.notification,
+    data: payload.data,
+    android: {
+      priority: "high",
+      notification: {
+        sound: "default",
+        channelId: "chat_messages",
         priority: "high",
-        notification: {
-          sound: "default",
-          channelId: "chat_messages", // Android Channel ID goes here
-          priority: "high",
-          defaultSound: true,
-          visibility: "public"
-        }
-      },
-      apns: {
-        payload: {
-          aps: {
-            sound: "default",
-            badge: 1,
-            contentAvailable: true
-          }
+        visibility: "public",
+        // Add these for better notification behavior
+        vibrate: true,
+        vibrationPattern: [0, 250, 250, 250],
+        defaultVibrateTimings: true,
+        defaultSound: true,
+        // Ensure light settings
+        lightSettings: {
+          color: '#FF0000FF',
+          lightOnDurationMs: 0,
+          lightOffDurationMs: 0
         }
       }
-    };
+    },
+    apns: {
+      payload: {
+        aps: {
+          sound: "default",
+          badge: 1,
+          contentAvailable: true,
+          // Add these for iOS
+          "mutable-content": 1,
+          interruptionLevel: "timeSensitive",
+          relevanceScore: 1.0
+        }
+      }
+    }
+  };
+
+
+  
+    // const messagePayload = {
+    //   tokens: tokens,
+    //   notification: payload.notification, // Only 'title' and 'body' allowed here
+    //   data: payload.data,
+    //   android: {
+    //     priority: "high",
+    //     notification: {
+    //       sound: "default",
+    //       channelId: "chat_messages", // Android Channel ID goes here
+    //       priority: "high",
+    //       visibility: "public"
+    //     }
+    //   },
+    //   apns: {
+    //     payload: {
+    //       aps: {
+    //         sound: "default",
+    //         badge: 1,
+    //         contentAvailable: true
+    //       }
+    //     }
+    //   }
+    // };
 
     const response = await admin.messaging().sendEachForMulticast(messagePayload);
 
@@ -79,6 +119,7 @@ const sendNotification = async (tokens, payload) => {
 
 const sendToUser = async (userId, payload) => {
   try {
+    console.log(`[FCM-Service] 🔍 Fetching tokens for user: ${userId}`);
     const userTokens = await FCMToken.find({ userId }).select("token -_id");
     
     if (userTokens.length === 0) {
@@ -87,6 +128,7 @@ const sendToUser = async (userId, payload) => {
     }
     
     const tokens = userTokens.map((t) => t.token);
+    console.log(`[FCM-Service] ✅ Found ${tokens.length} tokens. Sending notification...`);
     await sendNotification(tokens, payload);
     
   } catch (error) {
@@ -107,6 +149,9 @@ const sendNewMessageNotification = async (recipientId, sender, message, conversa
     },
     data: {
       type: 'chat_message',
+      channelId: 'chat_messages',
+      sound: 'default',
+      priority: 'high',
       otherUserId: sender._id.toString(),
       otherUserName: sender.name || 'Unknown User',
       otherUserPhotoURL: sender.photoURL || '',
