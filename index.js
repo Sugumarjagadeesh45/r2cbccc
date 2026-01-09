@@ -12,7 +12,6 @@ const conversationRoutes = require('./routes/conversationRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const fcmTokenRoutes = require('./routes/fcmTokenRoutes');
 
-// Don't import testFCMRoutes here yet - we'll import after creating it
 
 dotenv.config();
 
