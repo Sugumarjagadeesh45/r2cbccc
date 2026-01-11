@@ -6,6 +6,7 @@ const User = require('../models/userModel');
 const UserData = require('../models/UserData');
 const UserIdService = require('../services/userIdService');
 const { OAuth2Client } = require('google-auth-library');
+const admin = require('firebase-admin');
 
 // Initialize Google OAuth client
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -339,16 +340,36 @@ const googleSignIn = async (req, res) => {
   try {
     const { idToken } = req.body;
     
-    // Force a refresh of the Google public keys
-    await client.getFederatedSignonCertsAsync();
+    if (!idToken) {
+      return res.status(400).json({ success: false, message: 'Google ID token is required' });
+    }
     
-    // Verify ID token
-    const ticket = await client.verifyIdToken({
-      idToken: idToken,
-      audience: process.env.GOOGLE_CLIENT_ID,
-    });
-    const payload = ticket.getPayload();
-    const { email, name, picture, sub: googleId } = payload;
+    let email, name, picture, googleId;
+
+    try {
+      // Try verifying with Firebase Admin SDK first (since frontend sends Firebase token)
+      const decodedToken = await admin.auth().verifyIdToken(idToken);
+      email = decodedToken.email;
+      name = decodedToken.name;
+      picture = decodedToken.picture;
+      googleId = decodedToken.uid;
+    } catch (firebaseError) {
+      // Fallback to Google OAuth2 verification
+      try {
+        const ticket = await client.verifyIdToken({
+          idToken: idToken,
+          audience: process.env.GOOGLE_CLIENT_ID,
+        });
+        const payload = ticket.getPayload();
+        email = payload.email;
+        name = payload.name;
+        picture = payload.picture;
+        googleId = payload.sub;
+      } catch (googleError) {
+        console.error('Token verification failed:', googleError.message);
+        return res.status(401).json({ success: false, message: 'Invalid token' });
+      }
+    }
 
     // Check if user exists
     let user = await User.findOne({ 
