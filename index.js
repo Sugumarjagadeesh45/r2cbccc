@@ -47,7 +47,7 @@ app.use('/api/friends', friendsRoutes);
 app.use('/api', messageRoutes);
 app.use('/api', conversationRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/notifications', fcmTokenRoutes);
+app.use('/api/fcm', fcmTokenRoutes);
 
 // Now import testFCMRoutes after all middleware is setup
 try {

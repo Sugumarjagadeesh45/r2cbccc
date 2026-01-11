@@ -1,3 +1,5 @@
+// D:\reals2chat_backend-main\controllers\testFCMController.js
+const mongoose = require('mongoose'); // ADD THIS LINE
 const fcmService = require('../services/fcmService');
 const FCMToken = require('../models/FCMToken');
 const User = require('../models/userModel');
@@ -10,11 +12,29 @@ exports.sendTestNotification = async (req, res) => {
     console.log(`[Test-Notification] Sending test notification to user: ${userId}`);
     console.log(`[Test-Notification] From user: ${currentUserId}`);
     
+    // Try to find user by userId string first, then by ObjectId
+    let targetUser;
+    if (mongoose.Types.ObjectId.isValid(userId)) {
+      targetUser = await User.findById(userId);
+    } else {
+      targetUser = await User.findOne({ userId: userId });
+    }
+    
+    if (!targetUser) {
+      console.log(`[Test-Notification] ❌ User not found: ${userId}`);
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+    
+    const targetUserId = targetUser._id;
+    
     // Check if user has FCM token
-    const tokens = await FCMToken.find({ userId });
+    const tokens = await FCMToken.find({ userId: targetUserId });
     
     if (tokens.length === 0) {
-      console.log(`[Test-Notification] ❌ User ${userId} has no FCM tokens registered`);
+      console.log(`[Test-Notification] ❌ User ${userId} (${targetUserId}) has no FCM tokens registered`);
       return res.status(400).json({
         success: false,
         message: 'User has no FCM tokens registered'
@@ -33,13 +53,29 @@ exports.sendTestNotification = async (req, res) => {
       });
     }
     
+    // Validate tokens first
+    const validTokens = tokens.filter(token => {
+      // Check if token looks like a valid FCM token
+      const isValid = token.token && token.token.length > 100 && 
+                     (token.token.includes(':APA91b') || token.token.includes('fcm'));
+      if (!isValid) {
+        console.log(`[Test-Notification] ⚠️ Invalid FCM token format for user ${userId}`);
+      }
+      return isValid;
+    });
+    
+    if (validTokens.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No valid FCM tokens found for user'
+      });
+    }
+    
     // Send test notification
     const testPayload = {
       notification: {
         title: 'Test Notification',
         body: `This is a test notification from ${currentUser.name || 'the system'}`,
-        sound: 'default',
-        priority: 'high'
       },
       data: {
         type: 'test',
@@ -50,14 +86,16 @@ exports.sendTestNotification = async (req, res) => {
       }
     };
     
-    console.log(`[Test-Notification] 📤 Sending test payload:`, JSON.stringify(testPayload, null, 2));
+    console.log(`[Test-Notification] 📤 Sending test payload`);
+    console.log(`[Test-Notification] First token: ${validTokens[0].token.substring(0, 50)}...`);
     
-    await fcmService.sendToUser(userId, testPayload);
+    await fcmService.sendToUser(targetUserId, testPayload);
     
     res.json({
       success: true,
       message: 'Test notification sent successfully',
-      tokens: tokens.map(t => t.token.substring(0, 20) + '...')
+      tokenCount: validTokens.length,
+      tokenPreview: validTokens[0].token.substring(0, 20) + '...'
     });
     
   } catch (error) {
@@ -66,30 +104,6 @@ exports.sendTestNotification = async (req, res) => {
       success: false,
       message: error.message,
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    });
-  }
-};
-
-// Simple health check
-exports.healthCheck = async (req, res) => {
-  try {
-    const FCMToken = require('../models/FCMToken');
-    const tokenCount = await FCMToken.countDocuments();
-    
-    res.json({
-      success: true,
-      message: 'FCM Service is running',
-      stats: {
-        totalTokens: tokenCount,
-        firebaseInitialized: true,
-        timestamp: new Date().toISOString()
-      }
-    });
-  } catch (error) {
-    console.error('[FCM-Health] Error:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message
     });
   }
 };
