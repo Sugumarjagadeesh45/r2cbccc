@@ -37,7 +37,6 @@ const UserSchema = new mongoose.Schema(
       required: true,
       trim: true,
       uppercase: true,
-      // Remove index: true if you have it here
     },
     dateOfBirth: {
       type: Date,

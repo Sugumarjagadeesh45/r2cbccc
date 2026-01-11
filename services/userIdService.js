@@ -1,57 +1,70 @@
+const Counter = require('../models/counterModel');
 const User = require('../models/userModel');
 
+/**
+ * Service for handling unique user ID generation and validation.
+ */
 class UserIdService {
-  // Generate unique user ID in format: R2CYYYYMMDDNNN
+  /**
+   * Atomically generates a unique user ID in the format: R2CYYYYMMDDNNN
+   * @returns {Promise<string>} A unique user ID.
+   */
   static async generateUserId() {
     const now = new Date();
-    const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
-    const prefix = `R2C${dateStr}`;
-    
-    // Find the highest sequence number for today
-    const todayStart = new Date(now.setHours(0, 0, 0, 0));
-    const todayEnd = new Date(now.setHours(23, 59, 59, 999));
-    
-    const lastUser = await User.findOne({
-      userId: { $regex: `^${prefix}` },
-      createdAt: { $gte: todayStart, $lte: todayEnd }
-    }).sort({ createdAt: -1 });
-    
-    let sequence = 1;
-    if (lastUser && lastUser.userId) {
-      const lastSequence = parseInt(lastUser.userId.slice(-3), 10);
-      sequence = lastSequence + 1;
-    }
-    
-    const sequenceStr = sequence.toString().padStart(3, '0');
-    return `${prefix}${sequenceStr}`;
+    const year = now.getFullYear();
+    const month = (now.getMonth() + 1).toString().padStart(2, '0');
+    const day = now.getDate().toString().padStart(2, '0');
+    const dateStr = `${year}${month}${day}`;
+    const counterId = `userId_${dateStr}`;
+
+    // Atomically find the counter for today and increment its sequence value.
+    // If the counter doesn't exist, it will be created with sequence_value = 1.
+    const counter = await Counter.findByIdAndUpdate(
+      counterId,
+      { $inc: { sequence_value: 1 } },
+      { new: true, upsert: true }
+    );
+
+    const sequenceStr = counter.sequence_value.toString().padStart(3, '0');
+    return `R2C${dateStr}${sequenceStr}`;
   }
 
-  // Validate custom user ID
+  /**
+   * Validates the format of a custom user ID.
+   * @param {string} userId The user ID to validate.
+   * @returns {boolean} True if the format is valid, false otherwise.
+   */
   static validateCustomUserId(userId) {
-    if (!userId || typeof userId !== 'string') return false;
-    
-    // Exactly 6 characters minimum
-    if (userId.length < 6) return false;
-    
-    // No special characters allowed (only alphanumeric)
-    if (!/^[a-zA-Z0-9]+$/.test(userId)) return false;
-    
-    // Must include at least one number
-    if (!/\d/.test(userId)) return false;
-    
+    if (!userId || typeof userId !== 'string') {
+      return false;
+    }
+    // Must be at least 6 characters
+    if (userId.length < 6) {
+      return false;
+    }
+    // Must be alphanumeric
+    if (!/^[a-zA-Z0-9]+$/.test(userId)) {
+      return false;
+    }
+    // Must contain at least one number
+    if (!/\d/.test(userId)) {
+      return false;
+    }
     return true;
   }
 
-
-  
-  // Check if user ID already exists
+  /**
+   * Checks if a given user ID is already in use.
+   * @param {string} userId The user ID to check.
+   * @returns {Promise<boolean>} True if the ID is available, false otherwise.
+   */
   static async isUserIdAvailable(userId) {
-    if (!userId) return false;
-    
+    if (!userId) {
+      return false;
+    }
     const existingUser = await User.findOne({ 
       userId: userId.toUpperCase().trim() 
     });
-    
     return !existingUser;
   }
 }

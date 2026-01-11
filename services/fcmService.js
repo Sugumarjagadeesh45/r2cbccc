@@ -32,16 +32,9 @@ const sendNotification = async (tokens, payload) => {
         priority: "high",
         visibility: "public",
         // Add these for better notification behavior
-        vibrate: true,
-        vibrationPattern: [0, 250, 250, 250],
         defaultVibrateTimings: true,
         defaultSound: true,
         // Ensure light settings
-        lightSettings: {
-          color: '#FF0000FF',
-          lightOnDurationMs: 0,
-          lightOffDurationMs: 0
-        }
       }
     },
     apns: {

@@ -333,52 +333,22 @@ const resetPassword = async (req, res) => {
   }
 };
 
-// Fix the googleSignIn function - SIMPLIFIED VERSION
+
+// googleSignIn சார்பை மாற்றவும்
 const googleSignIn = async (req, res) => {
   try {
-    const { idToken, accessToken, user: userData } = req.body;
+    const { idToken } = req.body;
     
-    console.log('Google sign-in attempt with data:', {
-      hasIdToken: !!idToken,
-      hasAccessToken: !!accessToken,
-      hasUserData: !!userData
+    // Force a refresh of the Google public keys
+    await client.getFederatedSignonCertsAsync();
+    
+    // Verify ID token
+    const ticket = await client.verifyIdToken({
+      idToken: idToken,
+      audience: process.env.GOOGLE_CLIENT_ID,
     });
-
-    let payload;
-    
-    if (idToken) {
-      try {
-        // Verify the ID token
-        const ticket = await client.verifyIdToken({
-          idToken: idToken,
-          audience: process.env.GOOGLE_CLIENT_ID,
-        });
-        payload = ticket.getPayload();
-        console.log('Token verified via ID token');
-      } catch (verifyError) {
-        console.error('Google ID token verification failed:', verifyError.message);
-        return res.status(401).json({ 
-          success: false, 
-          message: 'Invalid Google token' 
-        });
-      }
-    } else {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Google ID token is required' 
-      });
-    }
-
+    const payload = ticket.getPayload();
     const { email, name, picture, sub: googleId } = payload;
-
-    console.log('Google sign-in attempt for email:', email);
-
-    if (!email) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Email is required from Google' 
-      });
-    }
 
     // Check if user exists
     let user = await User.findOne({ 
@@ -388,40 +358,8 @@ const googleSignIn = async (req, res) => {
       ] 
     });
 
-    if (user) {
-      console.log('Existing user found:', user.email);
-      
-      let userUpdated = false;
-
-      // Update Google info if needed
-      if (!user.googleId) {
-        user.googleId = googleId;
-        userUpdated = true;
-      }
-      
-      // Check if critical profile data is missing (DOB/Gender)
-      // If missing, force registrationComplete to false so they see the modal
-      if ((!user.dateOfBirth || !user.gender) && user.registrationComplete) {
-        console.log('User has missing profile data, resetting registrationComplete to false');
-        user.registrationComplete = false;
-        userUpdated = true;
-      }
-
-      if (userUpdated) {
-        await user.save();
-      }
-
-      // Ensure UserData exists for existing users
-      const userDataExists = await UserData.exists({ userId: user._id });
-      if (!userDataExists) {
-        await new UserData({ userId: user._id }).save();
-        console.log('Created missing UserData for existing user');
-      }
-    } else {
+    if (!user) {
       // Create new user
-      console.log('Creating new user for Google sign-in');
-      
-      // Generate user ID
       const userId = await UserIdService.generateUserId();
       
       user = new User({
@@ -435,20 +373,21 @@ const googleSignIn = async (req, res) => {
       });
 
       await user.save();
-      console.log('New user created with ID:', userId);
-
-      // Create userData entry
-      const userDataEntry = new UserData({
-        userId: user._id
-      });
+      
+      const userDataEntry = new UserData({ userId: user._id });
       await userDataEntry.save();
+
+    } else {
+      // Check if profile is incomplete
+      if (!user.dateOfBirth || !user.gender) {
+        user.registrationComplete = false;
+        await user.save();
+      }
     }
 
-    // FIXED: Use generateToken function consistently (remove duplicate declaration)
     const token = generateToken(user);
 
-    // Return user data
-    const responseData = {
+    res.json({
       success: true,
       token: token,
       user: {
@@ -457,23 +396,15 @@ const googleSignIn = async (req, res) => {
         name: user.name,
         email: user.email,
         photoURL: user.photoURL,
-        phone: user.phone,
-        dateOfBirth: user.dateOfBirth,
-        gender: user.gender,
-        isPhoneVerified: user.isPhoneVerified,
-        isEmailVerified: user.isEmailVerified,
         registrationComplete: user.registrationComplete
       }
-    };
-
-    console.log('Google sign-in successful for:', user.email);
-    res.json(responseData);
+    });
 
   } catch (error) {
     console.error('Google sign-in error:', error);
     res.status(500).json({ 
       success: false, 
-      message: 'Server error during Google sign-in: ' + error.message 
+      message: 'Server error during Google sign-in' 
     });
   }
 };
