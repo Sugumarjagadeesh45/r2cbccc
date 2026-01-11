@@ -26,7 +26,12 @@ exports.getFriends = async (req, res) => {
       .sort({ lastInteraction: -1 });
 
     // Extract friend details
-    const friends = await Promise.all(friendships.map(async (friendship) => {
+    const friendsData = await Promise.all(friendships.map(async (friendship) => {
+      // Check if populated users exist (handle deleted users)
+      if (!friendship.user1 || !friendship.user2) {
+        return null;
+      }
+
       const friend = toStringId(friendship.user1._id) === toStringId(userId)
         ? friendship.user2
         : friendship.user1;
@@ -47,6 +52,8 @@ exports.getFriends = async (req, res) => {
         lastSeen: userData ? userData.lastActive : null,
       };
     }));
+
+    const friends = friendsData.filter(f => f !== null);
 
     return res.json({
       success: true,
